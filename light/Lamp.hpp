@@ -1,155 +1,131 @@
-/**
- * Klasa reprezentująca lampę oświetleniową. 
- */
-#ifndef _LAMP_CLASS_
-#define _LAMP_CLASS_
+#pragma once
 
-#include "../core/SensorData.hpp"
-#include <MySensors.h>
 
-class Lamp {
-private:
-    bool enabled = false;
-    unsigned char pin;
+#include "../core/artifacts/Binary.hpp"
+#include "../core/artifacts/Sensor.hpp"
+using namespace Core;
 
-    void setState(bool state);
+namespace Light {
 
-protected:
-    uint8_t sensorId;
 
-    void sendCurrentState();
+    class Lamp :
+            public Binary,
+            public Sensor {
+    private:
+        const StandardSensorData *sensorData;
+    public:
+        Lamp(/* args */);
 
-public:
-    Lamp();
+        Lamp(const StandardSensorData *sensorData);
 
-    Lamp(SensorData SensorData);
+        void setEnabled(bool enabled);
 
-    void turnOn(); // włącza
-    void turnOff();
+        void presentSensor();
 
-    void toggle(); // zmiania stanu na przeciwny
-    void turnOnForTime(uint16_t milis); // włącza na określony czas
-    void run(); // uruchamiane przy kadym loop()
-    void setup(); // konfiguracja pinow arduino
-    void flash(unsigned char repeatNumber, unsigned char durationInMilis); // miganie
-    bool isTurnedOn(); // sprawdzanie aktualnego stanu
-    void registerLamp(); // rejstracja w MySensors
-    void receive(const MyMessage &message);
+        void setup();
 
-    String toString();
-};
+        void recieve(const MyMessage &message);
 
-Lamp::Lamp() {
-}
+        String toString();
 
-Lamp::Lamp(SensorData sensorData) {
-    this->pin = sensorData.pin;
-    this->sensorId = sensorData.sensorId;
+        void sendCurrentState();
+    };
 
+    Lamp::Lamp() {}
+
+    Lamp::Lamp(const StandardSensorData *sensorData) {
+        this->sensorData = sensorData;
 #ifdef MY_DEBUG
-    Serial.print("Lamp::Lamp");
-    Serial.println(this->toString());
+        Serial.print(F("Lamp::"));
+        Serial.println(this->toString());
 #endif
-}
-
-void Lamp::sendCurrentState() {
-    static MyMessage updateStateMessage = MyMessage();
-
-    updateStateMessage.clear();
-    updateStateMessage.setType(S_BINARY);
-    updateStateMessage.setSensor(this->sensorId);
-    updateStateMessage.set(enabled);
-
-    send(updateStateMessage);
-}
-
-String Lamp::toString() {
-    String result = F("Lamp(PIN:");
-    result.concat(pin);
-    result.concat(F(", ID:"));
-    result.concat(sensorId);
-    result.concat(F(")"));
-    return result;
-}
-
-void Lamp::registerLamp() {
-#ifdef MY_DEBUG
-    Serial.print(F("Lamp::registerLamp(sensorId: "));
-    Serial.print(this->sensorId);
-    Serial.println(F(")"));
-#endif
-
-    present(sensorId, S_BINARY);
-
-}
-
-void Lamp::setup() {
-#ifdef MY_DEBUG
-    Serial.print(F("Lamp::setup("));
-    Serial.print(toString());
-    Serial.println(F(")"));
-#endif
-
-    pinMode(pin, OUTPUT);
-    enabled = loadState(sensorId);
-    digitalWrite(pin, enabled ? HIGH : LOW);
-    saveState(sensorId, enabled);
-    sendCurrentState();
-
-}
-
-void Lamp::receive(const MyMessage &message) {
-    if (message.sensor == sensorId && message.type == V_STATUS && message.getBool() != enabled) {
-        setState(message.getBool());
     }
-}
 
-void Lamp::setState(bool state) {
-    if (state != enabled) {
+    void Lamp::setEnabled(bool enabled) {
+
+        if (this->enabled != enabled) {
 #ifdef MY_DEBUG
-        Serial.print(F("Lamp::setState("));
+            Serial.print(F("Lamp::setEnabled(new:"));
+            Serial.print(enabled);
+            Serial.print(", old: ");
+            Serial.print(toString());
+            Serial.println(F(")"));
+#endif
+
+            digitalWrite((*sensorData).pin, enabled ? HIGH : LOW);
+            saveState((*sensorData).sensorId, enabled);
+            sendCurrentState();
+            this->enabled = enabled;
+        }
+    }
+
+    void Lamp::presentSensor() {
+#ifdef MY_DEBUG
+        Serial.print(F("Lamp::presentSensor("));
         Serial.print(toString());
         Serial.println(F(")"));
 #endif
 
-        enabled = state;
-        digitalWrite(pin, enabled ? HIGH : LOW);
-        saveState(sensorId, enabled);
+        present((*sensorData).sensorId, S_BINARY);
+
+    }
+
+    void Lamp::setup() {
+#ifdef MY_DEBUG
+        Serial.print(F("Lamp::setup("));
+        Serial.print(toString());
+        Serial.println(F(")"));
+#endif
+
+        pinMode((*sensorData).pin, OUTPUT);
+        enabled = loadState((*sensorData).sensorId);
+        digitalWrite((*sensorData).pin, enabled ? HIGH : LOW);
+        saveState((*sensorData).sensorId, enabled);
         sendCurrentState();
     }
-}
 
-void Lamp::run() {
+    void Lamp::recieve(const MyMessage &message) {
+        if (message.destination == MY_NODE_ID &&
+            message.sensor == (*sensorData).sensorId &&
+            message.type == V_STATUS &&
+            message.getBool() != enabled) {
 
-}
-
-void Lamp::turnOff() {
-    setState(false);
-}
-
-void Lamp::turnOn() {
 #ifdef MY_DEBUG
-    Serial.print(F("Lamp::turnOn("));
-    Serial.print(toString());
-    Serial.println(F(")"));
+            Serial.print(F("Lamp::onMessage("));
+            Serial.print(toString());
+            Serial.println(F(")"));
 #endif
 
-    setState(true);
-}
+            setEnabled(message.getBool());
+        }
+    }
 
-void Lamp::toggle() {
+    String Lamp::toString() {
+        String result = F("Lamp(Enabled:");
+        result.concat(enabled);
+        result.concat(F(", pin:"));
+        result.concat((*sensorData).pin);
+        result.concat(F(", sensorId:"));
+        result.concat((*sensorData).sensorId);
+        result.concat(F(")"));
+        return result;
+    }
+
+
+    void Lamp::sendCurrentState() {
 #ifdef MY_DEBUG
-    Serial.print(F("Lamp::toggle("));
-    Serial.print(toString());
-    Serial.println(F(")"));
+        Serial.print(F("Lamp::sendCurrentState("));
+        Serial.print(toString());
+        Serial.println(F(")"));
 #endif
+        static MyMessage updateStateMessage = MyMessage();
 
-    setState(!enabled);
+        updateStateMessage.clear();
+        updateStateMessage.setType(S_BINARY);
+        updateStateMessage.setSensor((*sensorData).sensorId);
+        updateStateMessage.set(enabled);
+
+        send(updateStateMessage);
+    }
+
 }
-
-bool Lamp::isTurnedOn() {
-    return enabled;
-}
-
-
-#endif _LAMP_CLASS_
